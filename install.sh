@@ -12,7 +12,8 @@ while [[ -L "$SOURCE" ]]; do
   [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
-SCRIPT_NAME="$(basename "$0")"
+# Use real script filename (invocation may be via symlink, e.g. ./devc -> install.sh)
+SCRIPT_NAME="$(basename "$SOURCE")"
 
 # Colors for output
 RED='\033[0;31m'
@@ -323,7 +324,6 @@ cmd_self_install() {
 
   mkdir -p "$install_dir"
 
-  # Create a symlink to the original script
   ln -sf "$SCRIPT_DIR/$SCRIPT_NAME" "$install_path"
 
   log_success "Installed 'devc' to $install_path"
