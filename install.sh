@@ -37,6 +37,7 @@ Commands:
     exec <cmd>          Execute a command in the running container
     upgrade             Upgrade Claude Code to latest version
     mount <host> <cont> Add a mount to the devcontainer (recreates container)
+    build-image         Build Docker image from template repo (my-claude-code/devcontainer:local)
     help                Show this help message
 
 Examples:
@@ -49,6 +50,7 @@ Examples:
     devc exec ls -la            # Run command in container
     devc upgrade                # Upgrade Claude Code to latest
     devc mount ~/data /data     # Add mount to container
+    devc build-image            # Build local devcontainer image
 EOF
 }
 
@@ -179,7 +181,6 @@ cmd_template() {
   mkdir -p "$devcontainer_dir"
 
   # Copy template files
-  cp "$SCRIPT_DIR/Dockerfile" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/devcontainer.json" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/post_install.py" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/.zshrc" "$devcontainer_dir/"
@@ -214,6 +215,19 @@ cmd_rebuild() {
 
   devcontainer up --workspace-folder "$workspace_folder" --remove-existing-container
   log_success "Devcontainer rebuilt"
+}
+
+cmd_build_image() {
+  local dockerfile="$SCRIPT_DIR/Dockerfile-base"
+
+  if [[ ! -f "$dockerfile" ]]; then
+    log_error "Dockerfile not found: $dockerfile"
+    exit 1
+  fi
+
+  log_info "Building my-claude-code/devcontainer:local (Dockerfile & context: $SCRIPT_DIR)..."
+  docker buildx build -f "$dockerfile" -t my-claude-code/devcontainer:local "$SCRIPT_DIR"
+  log_success "Image built: my-claude-code/devcontainer:local"
 }
 
 cmd_down() {
@@ -373,6 +387,9 @@ main() {
     ;;
   rebuild)
     cmd_rebuild "$@"
+    ;;
+  build-image)
+    cmd_build_image
     ;;
   down)
     cmd_down "$@"
