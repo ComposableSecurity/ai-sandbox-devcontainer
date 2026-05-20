@@ -257,7 +257,7 @@ The container includes common development tooling so you can do all development 
 
 For the specific boundaries of what is and isn't isolated, see [Security Model](#security-model) below. One nuance worth calling out: the devcontainer runtime automatically forwards your host's SSH agent socket (`SSH_AUTH_SOCK`) into the container. This lets code inside the container authenticate as you over SSH (e.g., `git push`), but the actual private key material stays on the host and is never exposed to the container.
 
-## Security Model
+## Security model
 
 This setup gives **filesystem isolation**, not a full formal sandbox.
 
