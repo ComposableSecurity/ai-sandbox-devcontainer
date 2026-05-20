@@ -841,6 +841,7 @@ cmd_destroy() {
   fi
 
   log_success "All resources destroyed for $workspace_folder"
+}
 
 # Parse --custom flag from arguments
 # Returns "true" if --custom is present, "false" otherwise
