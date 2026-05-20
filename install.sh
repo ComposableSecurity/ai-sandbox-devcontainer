@@ -15,6 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 # Use real script filename (invocation may be via symlink, e.g. ./devc -> install.sh)
 SCRIPT_NAME="$(basename "$SOURCE")"
 
+# Constants
+BASE_IMAGE="my-ai-sandbox/devcontainer:local"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -213,8 +216,8 @@ cmd_template() {
 
   # Check if base image exists when using custom Dockerfile mode
   if [[ "$use_custom" == "true" ]]; then
-    if ! docker image inspect my-ai-sandbox/devcontainer:local &>/dev/null; then
-      log_warn "Base image 'my-ai-sandbox/devcontainer:local' not found."
+    if ! docker image inspect "$BASE_IMAGE" &>/dev/null; then
+      log_warn "Base image '$BASE_IMAGE' not found."
       read -p "Build it now? [y/N] " -n 1 -r
       echo
       if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -303,9 +306,9 @@ cmd_build_image() {
     exit 1
   fi
 
-  log_info "Building my-ai-sandbox/devcontainer:local (Dockerfile & context: $SCRIPT_DIR)..."
-  docker buildx build -f "$dockerfile" -t my-ai-sandbox/devcontainer:local "$SCRIPT_DIR"
-  log_success "Image built: my-ai-sandbox/devcontainer:local"
+  log_info "Building $BASE_IMAGE (Dockerfile & context: $SCRIPT_DIR)..."
+  docker buildx build -f "$dockerfile" -t "$BASE_IMAGE" "$SCRIPT_DIR"
+  log_success "Image built: $BASE_IMAGE"
 }
 
 cmd_down() {
@@ -755,7 +758,8 @@ print_destroy_summary() {
     done
   fi
 
-  if [[ -n "$IMAGE" ]]; then
+  # Only show image removal for project-specific images, not the shared base
+  if [[ -n "$IMAGE" && "$IMAGE" != "$BASE_IMAGE" ]]; then
     echo "  Image:      $IMAGE"
     if docker image inspect "$IMAGE_UID" &>/dev/null; then
       echo "              $IMAGE_UID"
@@ -831,7 +835,8 @@ cmd_destroy() {
     docker volume rm -f "$vol" >/dev/null 2>&1 || true
   done
 
-  if [[ -n "$IMAGE" ]]; then
+  # Only remove project-specific images, not the shared base image
+  if [[ -n "$IMAGE" && "$IMAGE" != "$BASE_IMAGE" ]]; then
     log_info "Removing image: $IMAGE"
     docker rmi -f "$IMAGE" >/dev/null 2>&1 || true
     if docker image inspect "$IMAGE_UID" &>/dev/null 2>&1; then
