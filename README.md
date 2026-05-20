@@ -4,6 +4,30 @@ A sandboxed development environment for running **Claude Code** and **OpenAI Cod
 
 This project lives at **[github.com/damianrusinek/ai-sandbox-devcontainer](https://github.com/damianrusinek/ai-sandbox-devcontainer)**. It started from **[Trail of Bits’ claude-code-devcontainer](https://github.com/trailofbits/claude-code-devcontainer)** and extends it for a broader "AI coding agent" sandbox.
 
+## TL;DR
+
+```bash
+# 1. Install devcontainer CLI (requires Node.js)
+npm install -g @devcontainers/cli
+
+# 2. Clone and install devc helper
+git clone https://github.com/damianrusinek/ai-sandbox-devcontainer ~/.ai-sandbox-devcontainer
+~/.ai-sandbox-devcontainer/install.sh self-install
+
+# 3. Build the shared base image (one-time)
+devc build-image
+
+# 4. Start using it in any project
+cd your-project
+devc .            # Install template + start container
+devc shell        # Open shell in container
+
+# Alternative: Open in VS Code / Cursor
+# Open the project folder, then Cmd+Shift+P → "Reopen in Container"
+```
+
+That's it. Run `claude` or `codex` inside the container with full permissions enabled safely.
+
 ## Compared to the Trail of Bits upstream
 
 - **OpenAI Codex** — Codex-oriented VS Code / Cursor extension (`openai.chatgpt`), persistent **`~/.codex`** data via a Docker volume, and host read-only **`~/.codex/commands`**. Use **`devc upgrade-agents`** to refresh **Claude Code** and the **Codex CLI** (`npm install -g @openai/codex@latest`) inside a running container.
