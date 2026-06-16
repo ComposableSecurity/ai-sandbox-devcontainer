@@ -30,6 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ipset \
   iptables \
   iproute2 \
+  # Pricing estimation
+  cloc \
+  tree \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install git-delta
