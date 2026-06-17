@@ -2,7 +2,7 @@
 
 A sandboxed development environment for running **Claude Code** and **OpenAI Codex** with dangerous permissions safely enabled. Use strong agent defaults inside an isolated container instead of on your host.
 
-This project lives at **[github.com/damianrusinek/ai-sandbox-devcontainer](https://github.com/damianrusinek/ai-sandbox-devcontainer)**. It started from **[Trail of Bits’ claude-code-devcontainer](https://github.com/trailofbits/claude-code-devcontainer)** and extends it for a broader "AI coding agent" sandbox.
+This project lives at **[github.com/ComposableSecurity/ai-sandbox-devcontainer](https://github.com/ComposableSecurity/ai-sandbox-devcontainer)**. It started from **[Trail of Bits’ claude-code-devcontainer](https://github.com/trailofbits/claude-code-devcontainer)** and extends it for a broader "AI coding agent" sandbox.
 
 ## TL;DR
 
@@ -11,7 +11,7 @@ This project lives at **[github.com/damianrusinek/ai-sandbox-devcontainer](https
 npm install -g @devcontainers/cli
 
 # 2. Clone and install devc helper
-git clone https://github.com/damianrusinek/ai-sandbox-devcontainer ~/.ai-sandbox-devcontainer
+git clone https://github.com/ComposableSecurity/ai-sandbox-devcontainer ~/.ai-sandbox-devcontainer
 ~/.ai-sandbox-devcontainer/install.sh self-install
 
 # 3. Build the shared base image (one-time)
@@ -57,7 +57,7 @@ Running agents with broad permissions on your host is risky: they can run comman
 
   ```bash
   npm install -g @devcontainers/cli
-  git clone https://github.com/damianrusinek/ai-sandbox-devcontainer ~/.ai-sandbox-devcontainer
+  git clone https://github.com/ComposableSecurity/ai-sandbox-devcontainer ~/.ai-sandbox-devcontainer
   ~/.ai-sandbox-devcontainer/install.sh self-install
   ```
 
