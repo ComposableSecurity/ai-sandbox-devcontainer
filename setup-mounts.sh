@@ -17,7 +17,7 @@ mkdir -p "$CACHE_DIR"
 touch "$PREFS_FILE"
 
 get_pref() {
-  grep "^$1=" "$PREFS_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-
+  grep "^$1=" "$PREFS_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- || true
 }
 
 set_pref() {
