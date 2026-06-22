@@ -60,13 +60,6 @@ RUN mkdir -p /commandhistory /workspace /home/vscode/.claude /opt && \
   touch /commandhistory/.zsh_history && \
   chown -R vscode:vscode /commandhistory /workspace /home/vscode/.claude /opt
 
-# Install kaden csv-scan skills
-RUN mkdir -p /home/vscode/.claude/skills && \
-  curl -fsSL https://github.com/damianrusinek/kaden-scv-scan/archive/refs/heads/main.zip -o /tmp/kaden-csv-scan-skills.zip && \
-  unzip /tmp/kaden-csv-scan-skills.zip -d /home/vscode/.claude/skills && \
-  rm /tmp/kaden-csv-scan-skills.zip
-
-
 # Set environment variables
 ENV DEVCONTAINER=true
 ENV SHELL=/bin/zsh
