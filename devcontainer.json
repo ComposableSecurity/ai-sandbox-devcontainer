@@ -39,9 +39,9 @@
     "source=devc-${localWorkspaceFolderBasename}-claude-code-config-${devcontainerId},target=/home/vscode/.claude,type=volume",
     "source=devc-${localWorkspaceFolderBasename}-codex-config-${devcontainerId},target=/home/vscode/.codex,type=volume",
     "source=devc-${localWorkspaceFolderBasename}-claude-code-gh-${devcontainerId},target=/home/vscode/.config/gh,type=volume",
-    "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,readonly",
-    "source=${localEnv:HOME}/.claude/commands,target=/home/vscode/.claude/commands,type=bind,readonly",
-    "source=${localEnv:HOME}/.codex/commands,target=/home/vscode/.codex/commands,type=bind,readonly"
+    "source=${localWorkspaceFolder}/.devcontainer/.mount-cache/gitconfig,target=/home/vscode/.gitconfig,type=bind,readonly",
+    "source=${localWorkspaceFolder}/.devcontainer/.mount-cache/claude-commands,target=/home/vscode/.claude/commands,type=bind,readonly",
+    "source=${localWorkspaceFolder}/.devcontainer/.mount-cache/codex-commands,target=/home/vscode/.codex/commands,type=bind,readonly"
   ],
   "containerEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096",
@@ -62,7 +62,7 @@
     "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN:}",
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY:}"
   },
-  "initializeCommand": "test -f \"$HOME/.gitconfig\" || touch \"$HOME/.gitconfig\"",
+  "initializeCommand": "bash \"${localWorkspaceFolder}/.devcontainer/setup-mounts.sh\"",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
   "workspaceFolder": "/workspace",
   "postCreateCommand": "uv run --no-project /opt/post_install.py"

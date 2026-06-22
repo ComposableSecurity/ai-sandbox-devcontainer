@@ -32,7 +32,8 @@ That's it. Run `claude` or `codex` inside the container with full permissions en
 
 - **OpenAI Codex** — Codex-oriented VS Code / Cursor extension (`openai.chatgpt`), persistent **`~/.codex`** data via a Docker volume, and host read-only **`~/.codex/commands`**. Use **`devc upgrade-agents`** to refresh **Claude Code** and the **Codex CLI** (`npm install -g @openai/codex@latest`) inside a running container.
 - **Shared Docker image** — Workspaces reference a **fixed image name** (`my-ai-sandbox/devcontainer:local` in `devcontainer.json`). You **`devc build-image` once** (from this repo); every new folder that runs `devc .` / `devc up` **reuses that image** and only creates a **new container** plus **per-workspace named volumes**. You avoid rebuilding a full image for each project.
-- **Custom Dockerfile mode** — Use `devc . --custom` to copy a customizable `Dockerfile` into your project's `.devcontainer/` directory. This lets you add project-specific dependencies or modifications while still extending the base image.
+- **Custom image support** — Build a customized image once with `devc build-image --custom` (uses the bundled `Dockerfile-custom` by default; `--custom <path>` accepts any Dockerfile and `--name <tag>` overrides the image name). Then opt projects into it with `devc . --custom` (defaults to `my-ai-sandbox/devcontainer:custom`) or `devc . --custom <image:tag>`. The template stays image-based — no per-project Dockerfile copies and no per-project rebuilds.
+- **Opt-in host mounts** — On first build, `setup-mounts.sh` (run from `initializeCommand`) asks whether to bind-mount your `~/.gitconfig`, `~/.claude/commands`, and `~/.codex/commands` into the container. Answers are cached in `.devcontainer/.mount-prefs`; the container only sees what you explicitly approved.
 - **Other tweaks** — Naming, volume prefixes (`ai-sandbox-*`), container `runArgs` (e.g. predictable `--name`), npm defaults in `containerEnv`, and small quality-of-life changes on top of the upstream design.
 
 ## Why use this?
@@ -171,19 +172,22 @@ If you don't set a token, the interactive login flow works as before.
 ## CLI Helper Commands
 
 ```
-devc .              Install template + start container in current directory
-devc . --custom      Install template with custom Dockerfile build mode
-devc build-image     Build my-ai-sandbox/devcontainer:local (once; shared by workspaces)
-devc up             Start the devcontainer
-devc rebuild        Rebuild container (preserves persistent volumes)
-devc destroy [-f]   Remove container, volumes, and image for current project
-devc down           Stop the container
-devc shell          Open zsh shell in container
-devc exec CMD       Execute command inside the container
-devc upgrade        Upgrade Claude Code in the container
-devc mount SRC DST  Add a bind mount (host → container)
-devc sync [NAME]    Sync Claude Code sessions from devcontainers to host
-devc self-install   Install devc to ~/.local/bin
+devc .                                  Install template + start container in current directory
+devc . --custom [IMAGE]                 Use a prebuilt custom image (default: my-ai-sandbox/devcontainer:custom)
+devc build-image                        Build my-ai-sandbox/devcontainer:local (once; shared by workspaces)
+devc build-image --custom [DOCKERFILE]  Build the custom image (default Dockerfile: bundled Dockerfile-custom)
+                                        Optional --name <tag> to override image name
+                                        (default: my-ai-sandbox/devcontainer:custom)
+devc up                                 Start the devcontainer
+devc rebuild                            Rebuild container (preserves persistent volumes)
+devc destroy [-f]                       Remove container, volumes, and image for current project
+devc down                               Stop the container
+devc shell                              Open zsh shell in container
+devc exec CMD                           Execute command inside the container
+devc upgrade                            Upgrade Claude Code in the container
+devc mount SRC DST                      Add a bind mount (host → container)
+devc sync [NAME]                        Sync Claude Code sessions from devcontainers to host
+devc self-install                       Install devc to ~/.local/bin
 ```
 
 > **Note:** Use `devc destroy` to clean up a project's Docker resources. Removing containers manually (e.g., `docker rm`) will leave orphaned volumes and images behind that `devc destroy` won't be able to find.
@@ -222,15 +226,25 @@ This adds a bind mount to `devcontainer.json` and recreates the container. Exist
 
 > **Security note:** Avoid mounting large host directories (e.g., `$HOME`). Every mounted path is writable from inside the container unless `--readonly` is specified, which undermines the filesystem isolation this project provides.
 
-### Custom Dockerfile mode
+### Custom images
 
-By default, `devc .` uses the prebuilt `my-ai-sandbox/devcontainer:local` image (requires `devc build-image` first). For projects that need additional dependencies or customizations, use the `--custom` flag:
+By default, `devc .` uses the prebuilt `my-ai-sandbox/devcontainer:local` image (requires `devc build-image` first). For projects that need extra dependencies or modifications, **build a custom image once** and then point projects at it.
+
+**1. Build the custom image** with `devc build-image --custom`. With no arguments it builds the bundled `Dockerfile-custom` (which `FROM`s the base image) as `my-ai-sandbox/devcontainer:custom`:
 
 ```bash
-devc . --custom
+devc build-image --custom
 ```
 
-This copies a `Dockerfile` into `.devcontainer/` that extends the base image:
+You can also point at any other Dockerfile and tag it however you like:
+
+```bash
+devc build-image --custom /path/to/Dockerfile           # custom Dockerfile, default name
+devc build-image --custom --name myorg/devc:v1          # bundled Dockerfile, custom tag
+devc build-image --custom /path/Dockerfile --name myorg/devc:v1
+```
+
+The `Dockerfile-custom` template extends the base image:
 
 ```dockerfile
 FROM my-ai-sandbox/devcontainer:local
@@ -238,7 +252,14 @@ FROM my-ai-sandbox/devcontainer:local
 # Add your project-specific customizations here
 ```
 
-The container builds locally each time, allowing you to add project-specific tools, dependencies, or configurations. Edit `.devcontainer/Dockerfile` after installation to customize.
+**2. Use the custom image in a project** with `devc . --custom`. With no value it picks the default `my-ai-sandbox/devcontainer:custom`; with a value it uses that tag:
+
+```bash
+devc . --custom                           # uses my-ai-sandbox/devcontainer:custom
+devc . --custom myorg/devc:v1             # uses a specific image
+```
+
+`devc .` updates the project's `.devcontainer/devcontainer.json` to set `image` to the chosen tag — no per-project Dockerfile copy, no per-project rebuilds. If the image isn't present locally, `devc .` will tell you which `build-image --custom` invocation to run.
 
 ## Network isolation
 
@@ -287,7 +308,7 @@ This setup gives **filesystem isolation**, not a full formal sandbox.
 
 **Isolated:** Workspace filesystem (bind-mounted project), processes, and package installs stay in the container.
 
-**Not isolated by default:** Outbound **network** (see above), **git identity** (`~/.gitconfig` bind-mounted read-only), SSH agent (socket forwarded, keys stay on host), Docker socket (not mounted by default), and anything you add to the workspace.
+**Not isolated by default:** Outbound **network** (see above), SSH agent (socket forwarded, keys stay on host), Docker socket (not mounted by default), and anything you add to the workspace. **Git identity** (`~/.gitconfig`) and your host `~/.claude/commands` / `~/.codex/commands` directories are **opt-in** — `setup-mounts.sh` (run from `initializeCommand`) prompts on first build and caches your answer in `.devcontainer/.mount-prefs`. Decline and the container sees an empty placeholder instead of the host file.
 
 **Claude** is configured for **`bypassPermissions`** inside the container so it can run commands without per-step confirmation—that is intentional **inside** this environment, not something you want unchecked on your host.
 
@@ -304,7 +325,7 @@ This setup gives **filesystem isolation**, not a full formal sandbox.
 | Image | `my-ai-sandbox/devcontainer:local` — **one build**, many containers |
 | Volumes (per devcontainer id) | Shell history (`/commandhistory`), `~/.claude`, `~/.codex`, `~/.config/gh` |
 
-Host **`~/.gitconfig`** is mounted read-only for commits; **`~/.claude/commands`** and **`~/.codex/commands`** are optional read-only command folders from the host.
+Host **`~/.gitconfig`**, **`~/.claude/commands`**, and **`~/.codex/commands`** are **opt-in** read-only mounts. On first build, `setup-mounts.sh` (run from `initializeCommand`) asks per path; answers are cached in `.devcontainer/.mount-prefs`, so subsequent builds are silent. Edit or delete that file to be re-asked.
 
 ## Troubleshooting
 

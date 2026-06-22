@@ -17,6 +17,7 @@ SCRIPT_NAME="$(basename "$SOURCE")"
 
 # Constants
 BASE_IMAGE="my-ai-sandbox/devcontainer:local"
+CUSTOM_IMAGE_DEFAULT="my-ai-sandbox/devcontainer:custom"
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,41 +31,51 @@ print_usage() {
 Usage: devc <command> [options]
 
 Commands:
-    .                   Install devcontainer template to current directory and start
-    up                  Start the devcontainer in current directory
-    rebuild             Rebuild the devcontainer (preserves auth volumes)
-    down                Stop the devcontainer
-    shell               Open a shell in the running container
-    self-install        Install 'devc' command to ~/.local/bin
-    update              Update devc to the latest version
-    upgrade-agents      Upgrade Claude Code and Codex CLI to latest
-    mount <host> <cont> Add a mount to the devcontainer (recreates container)
-    build-image         Build Docker image from template repo (my-claude-code/devcontainer:local)
-    sync [project] [--trusted]  Sync sessions from devcontainers to host
-    cp <cont> <host>    Copy files/directories from container to host
-    destroy [-f]        Remove container, volumes, and image for current project
-    help                Show this help message
+    .                              Install devcontainer template to current directory and start
+    up                             Start the devcontainer in current directory
+    rebuild                        Rebuild the devcontainer (preserves auth volumes)
+    down                           Stop the devcontainer
+    shell                          Open a shell in the running container
+    self-install                   Install 'devc' command to ~/.local/bin
+    update                         Update devc to the latest version
+    upgrade-agents                 Upgrade Claude Code and Codex CLI to latest
+    mount <host> <cont>            Add a mount to the devcontainer (recreates container)
+    build-image                    Build the base Docker image (my-ai-sandbox/devcontainer:local)
+    sync [project] [--trusted]     Sync sessions from devcontainers to host
+    cp <cont> <host>               Copy files/directories from container to host
+    destroy [-f]                   Remove container, volumes, and image for current project
+    help                           Show this help message
 
 Options:
-    --custom            Use custom Dockerfile build instead of prebuilt image
-                        (applies to: ., up, rebuild)
+    --custom [IMAGE]               For . : use a prebuilt custom image as the devcontainer image.
+                                   Defaults to ${CUSTOM_IMAGE_DEFAULT} when no value is given.
+                                   For build-image: build a custom image (see below).
+    --custom [DOCKERFILE]          For build-image: build the custom image from the given
+                                   Dockerfile (path may live in any directory). If no value
+                                   is given, uses the bundled Dockerfile-custom.
+    --name <NAME>                  For build-image --custom: name the built image. Defaults
+                                   to ${CUSTOM_IMAGE_DEFAULT}.
 
 Examples:
-    devc .                      # Install template and start container
-    devc . --custom             # Install template with custom Dockerfile build (you will need to update the Dockerfile in the workspace)
-    devc up                     # Start container in current directory
-    devc rebuild                # Clean rebuild
-    devc shell                  # Open interactive shell
-    devc self-install           # Install devc to PATH
-    devc update                 # Update to latest version
-    devc upgrade-agents         # Upgrade Claude Code and Codex CLI
-    devc mount ~/data /data     # Add mount to container
-    devc build-image            # Build local devcontainer image
-    devc sync                   # Sync sessions from all devcontainers
-    devc sync crypto            # Sync only matching devcontainer
-    devc cp /some/file ./out    # Copy a path from container to host
-    devc destroy                # Remove all project Docker resources
-    devc destroy -f             # Skip confirmation prompt
+    devc .                                       # Install template and start container
+    devc . --custom                              # Use default custom image (${CUSTOM_IMAGE_DEFAULT})
+    devc . --custom myorg/devc:latest            # Use a specific prebuilt image
+    devc up                                      # Start container in current directory
+    devc rebuild                                 # Clean rebuild
+    devc shell                                   # Open interactive shell
+    devc self-install                            # Install devc to PATH
+    devc update                                  # Update to latest version
+    devc upgrade-agents                          # Upgrade Claude Code and Codex CLI
+    devc mount ~/data /data                      # Add mount to container
+    devc build-image                             # Build base image
+    devc build-image --custom                    # Build custom image from bundled Dockerfile-custom
+    devc build-image --custom /path/Dockerfile   # Build from a specific Dockerfile
+    devc build-image --custom --name myorg/x:v1  # Build custom image with a specific tag
+    devc sync                                    # Sync sessions from all devcontainers
+    devc sync crypto                             # Sync only matching devcontainer
+    devc cp /some/file ./out                     # Copy a path from container to host
+    devc destroy                                 # Remove all project Docker resources
+    devc destroy -f                              # Skip confirmation prompt
 EOF
 }
 
@@ -167,19 +178,13 @@ merge_mounts_from_file() {
   echo "$updated" >"$devcontainer_json"
 }
 
-# Convert devcontainer.json from image-based to build-based configuration
-convert_to_build_config() {
+# Set .image in devcontainer.json (and remove any .build block).
+set_devcontainer_image() {
   local devcontainer_json="$1"
+  local image_name="$2"
 
   local updated
-  updated=$(jq 'del(.image) | .build = {
-    "dockerfile": "Dockerfile",
-    "args": {
-      "TZ": "${localEnv:TZ:UTC}",
-      "GIT_DELTA_VERSION": "0.18.2",
-      "ZSH_IN_DOCKER_VERSION": "1.2.1"
-    }
-  }' "$devcontainer_json")
+  updated=$(jq --arg img "$image_name" 'del(.build) | .image = $img' "$devcontainer_json")
 
   echo "$updated" >"$devcontainer_json"
 }
@@ -208,23 +213,32 @@ update_devcontainer_mounts() {
 cmd_template() {
   local target_dir="${1:-.}"
   local use_custom="${2:-false}"
+  local custom_image="${3:-}"
 
   target_dir="$(cd "$target_dir" 2>/dev/null && pwd)" || {
     log_error "Directory does not exist: $1"
     exit 1
   }
 
-  # Check if base image exists when using custom Dockerfile mode
+  local image_name="$BASE_IMAGE"
+
   if [[ "$use_custom" == "true" ]]; then
-    if ! docker image inspect "$BASE_IMAGE" &>/dev/null; then
-      log_warn "Base image '$BASE_IMAGE' not found."
-      read -p "Build it now? [y/N] " -n 1 -r
-      echo
-      if [[ $REPLY =~ ^[Yy]$ ]]; then
-        cmd_build_image
+    image_name="${custom_image:-$CUSTOM_IMAGE_DEFAULT}"
+    if ! docker image inspect "$image_name" &>/dev/null; then
+      log_warn "Custom image '$image_name' not found."
+      if [[ -z "$custom_image" ]]; then
+        read -p "Build it now from the bundled Dockerfile-custom? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+          cmd_build_image "true" "" "$image_name"
+        else
+          log_error "Cannot use --custom without the image."
+          log_info "Build it first with: devc build-image --custom"
+          exit 1
+        fi
       else
-        log_error "Cannot use --custom without the base image."
-        log_info "Build it first with: devc build-image"
+        log_error "Image '$image_name' not found."
+        log_info "Build it first, e.g.: devc build-image --custom <dockerfile> --name \"$image_name\""
         exit 1
       fi
     fi
@@ -256,12 +270,13 @@ cmd_template() {
   cp "$SCRIPT_DIR/devcontainer.json" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/post_install.py" "$devcontainer_dir/"
   cp "$SCRIPT_DIR/.zshrc" "$devcontainer_dir/"
+  cp "$SCRIPT_DIR/setup-mounts.sh" "$devcontainer_dir/"
+  chmod +x "$devcontainer_dir/setup-mounts.sh"
 
-  # Handle custom Dockerfile build mode
+  # Apply custom image selection in the copied devcontainer.json
   if [[ "$use_custom" == "true" ]]; then
-    cp "$SCRIPT_DIR/Dockerfile-custom" "$devcontainer_dir/Dockerfile"
-    convert_to_build_config "$devcontainer_json"
-    log_info "Using custom Dockerfile build mode"
+    set_devcontainer_image "$devcontainer_json" "$image_name"
+    log_info "Using custom image: $image_name"
   fi
 
   # Restore preserved mounts
@@ -299,16 +314,39 @@ cmd_rebuild() {
 }
 
 cmd_build_image() {
-  local dockerfile="$SCRIPT_DIR/Dockerfile-base"
+  local use_custom="${1:-false}"
+  local custom_dockerfile="${2:-}"
+  local custom_name="${3:-}"
+
+  local dockerfile context image_name
+
+  if [[ "$use_custom" == "true" ]]; then
+    if [[ -n "$custom_dockerfile" ]]; then
+      if [[ ! -f "$custom_dockerfile" ]]; then
+        log_error "Dockerfile not found: $custom_dockerfile"
+        exit 1
+      fi
+      dockerfile="$(cd "$(dirname "$custom_dockerfile")" && pwd)/$(basename "$custom_dockerfile")"
+      context="$(dirname "$dockerfile")"
+    else
+      dockerfile="$SCRIPT_DIR/Dockerfile-custom"
+      context="$SCRIPT_DIR"
+    fi
+    image_name="${custom_name:-$CUSTOM_IMAGE_DEFAULT}"
+  else
+    dockerfile="$SCRIPT_DIR/Dockerfile-base"
+    context="$SCRIPT_DIR"
+    image_name="$BASE_IMAGE"
+  fi
 
   if [[ ! -f "$dockerfile" ]]; then
     log_error "Dockerfile not found: $dockerfile"
     exit 1
   fi
 
-  log_info "Building $BASE_IMAGE (Dockerfile & context: $SCRIPT_DIR)..."
-  docker buildx build -f "$dockerfile" -t "$BASE_IMAGE" "$SCRIPT_DIR"
-  log_success "Image built: $BASE_IMAGE"
+  log_info "Building $image_name (Dockerfile: $dockerfile, context: $context)..."
+  docker buildx build -f "$dockerfile" -t "$image_name" "$context"
+  log_success "Image built: $image_name"
 }
 
 cmd_down() {
@@ -692,8 +730,9 @@ cmd_update() {
 
 cmd_dot() {
   local use_custom="${1:-false}"
+  local custom_image="${2:-}"
   # Install template and start container in one command
-  cmd_template "." "$use_custom"
+  cmd_template "." "$use_custom" "$custom_image"
   cmd_up "."
 }
 
@@ -848,18 +887,55 @@ cmd_destroy() {
   log_success "All resources destroyed for $workspace_folder"
 }
 
-# Parse --custom flag from arguments
-# Returns "true" if --custom is present, "false" otherwise
-# Also removes --custom from the argument list via a global variable
+# Parse --custom [VALUE] and --name [VALUE] flags from arguments.
+# Sets globals:
+#   USE_CUSTOM=true|false        Whether --custom was passed
+#   CUSTOM_VALUE=<string>        Value following --custom, if any
+#                                (image name for `.`, dockerfile path for build-image)
+#   CUSTOM_NAME=<string>         Value following --name (for build-image)
+#   REMAINING_ARGS=(...)         Remaining args after flag removal
 parse_custom_flag() {
   USE_CUSTOM="false"
+  CUSTOM_VALUE=""
+  CUSTOM_NAME=""
   REMAINING_ARGS=()
-  for arg in "$@"; do
-    if [[ "$arg" == "--custom" ]]; then
-      USE_CUSTOM="true"
-    else
-      REMAINING_ARGS+=("$arg")
-    fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --custom)
+        USE_CUSTOM="true"
+        if [[ $# -gt 1 && "$2" != -* ]]; then
+          CUSTOM_VALUE="$2"
+          shift 2
+        else
+          shift
+        fi
+        ;;
+      --custom=*)
+        USE_CUSTOM="true"
+        CUSTOM_VALUE="${1#--custom=}"
+        shift
+        ;;
+      --name)
+        if [[ $# -lt 2 || "$2" == -* ]]; then
+          log_error "--name requires a value"
+          exit 1
+        fi
+        CUSTOM_NAME="$2"
+        shift 2
+        ;;
+      --name=*)
+        CUSTOM_NAME="${1#--name=}"
+        if [[ -z "$CUSTOM_NAME" ]]; then
+          log_error "--name requires a value"
+          exit 1
+        fi
+        shift
+        ;;
+      *)
+        REMAINING_ARGS+=("$1")
+        shift
+        ;;
+    esac
   done
 }
 
@@ -878,7 +954,7 @@ main() {
 
   case "$command" in
   .)
-    cmd_dot "$USE_CUSTOM"
+    cmd_dot "$USE_CUSTOM" "$CUSTOM_VALUE"
     ;;
   up)
     cmd_up "${REMAINING_ARGS[@]:-}"
@@ -887,7 +963,7 @@ main() {
     cmd_rebuild "${REMAINING_ARGS[@]:-}"
     ;;
   build-image)
-    cmd_build_image
+    cmd_build_image "$USE_CUSTOM" "$CUSTOM_VALUE" "$CUSTOM_NAME"
     ;;
   down)
     cmd_down "${REMAINING_ARGS[@]:-}"
